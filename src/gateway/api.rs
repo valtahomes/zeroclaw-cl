@@ -1537,6 +1537,7 @@ pub async fn handle_api_skills_audit(
         )
             .into_response()
     }
+}
 // ── Claude Code hook endpoint ────────────────────────────────────
 
 /// POST /hooks/claude-code — receives HTTP hook events from Claude Code
