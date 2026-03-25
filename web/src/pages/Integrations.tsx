@@ -332,13 +332,11 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="w-full max-w-lg rounded-2xl border shadow-2xl animate-slide-in-up"
-        style={{ background: 'linear-gradient(145deg, #0d0d1a 0%, #111128 100%)', borderColor: 'var(--pc-border)' }}
+        className="w-full max-w-lg rounded-2xl border shadow-2xl animate-slide-in-up card"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--pc-border)' }}>
@@ -353,8 +351,7 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg transition-colors"
-            style={{ color: 'var(--pc-text-muted)', background: 'transparent' }}
+            className="p-1.5 rounded-lg transition-colors btn-icon"
           >
             <X className="h-4 w-4" />
           </button>
@@ -370,14 +367,13 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
               <div key={field.key}>
                 <label className="flex items-center gap-1.5 text-xs font-semibold mb-1.5" style={{ color: 'var(--pc-text-secondary)' }}>
                   {field.label}
-                  {field.required && <span className="text-[#ff4466]">*</span>}
+                  {field.required && <span style={{ color: 'var(--color-status-error)' }}>*</span>}
                 </label>
 
                 {field.type === 'textarea' ? (
                   <textarea
                     rows={3}
-                    className="w-full rounded-xl bg-[#0a0a18] border px-3.5 py-2.5 text-sm placeholder:text-[#334060] focus:outline-none focus:border-[#0080ff40] focus:ring-1 focus:ring-[#0080ff20] transition-all resize-none font-mono"
-                    style={{ borderColor: 'var(--pc-border)', color: 'var(--pc-text-primary)' }}
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm focus:outline-none focus:border-[var(--pc-accent-dim)] focus:ring-1 focus:ring-[var(--pc-accent-glow)] transition-all resize-none font-mono input-electric"
                     placeholder={field.placeholder}
                     value={values[field.key] ?? ''}
                     onChange={(e) => handleChange(field.key, e.target.value)}
@@ -385,19 +381,19 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
                 ) : field.type === 'toggle' ? (
                   <button
                     onClick={() => handleChange(field.key, values[field.key] === 'true' ? 'false' : 'true')}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${values[field.key] === 'true' ? 'bg-[#0080ff]' : ''}`}
+                    className="relative w-11 h-6 rounded-full transition-colors"
                     style={{ background: values[field.key] === 'true' ? 'var(--pc-accent)' : 'var(--pc-border)' }}
                   >
                     <span
-                      className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${values[field.key] === 'true' ? 'translate-x-5' : ''}`}
+                      className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full transition-transform ${values[field.key] === 'true' ? 'translate-x-5' : ''}`}
+                      style={{ backgroundColor: 'var(--pc-bg-surface)' }}
                     />
                   </button>
                 ) : field.type === 'password' ? (
                   <div className="relative">
                     <input
                       type={visibleFields.has(field.key) ? 'text' : 'password'}
-                      className="w-full rounded-xl bg-[#0a0a18] border px-3.5 py-2.5 pr-10 text-sm placeholder:text-[#334060] focus:outline-none focus:border-[#0080ff40] focus:ring-1 focus:ring-[#0080ff20] transition-all font-mono"
-                      style={{ borderColor: 'var(--pc-border)', color: 'var(--pc-text-primary)' }}
+                      className="w-full rounded-xl border px-3.5 py-2.5 pr-10 text-sm focus:outline-none focus:border-[var(--pc-accent-dim)] focus:ring-1 focus:ring-[var(--pc-accent-glow)] transition-all font-mono input-electric"
                       placeholder={field.placeholder}
                       value={values[field.key] ?? ''}
                       onChange={(e) => handleChange(field.key, e.target.value)}
@@ -410,8 +406,7 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
                         else next.add(field.key);
                         return next;
                       })}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-colors"
-                      style={{ color: 'var(--pc-text-muted)', background: 'transparent' }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-colors btn-icon"
                       tabIndex={-1}
                     >
                       {visibleFields.has(field.key) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -420,8 +415,7 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
                 ) : (
                   <input
                     type={field.type === 'number' ? 'number' : 'text'}
-                    className="w-full rounded-xl bg-[#0a0a18] border px-3.5 py-2.5 text-sm placeholder:text-[#334060] focus:outline-none focus:border-[#0080ff40] focus:ring-1 focus:ring-[#0080ff20] transition-all font-mono"
-                    style={{ borderColor: 'var(--pc-border)', color: 'var(--pc-text-primary)' }}
+                    className="w-full rounded-xl border px-3.5 py-2.5 text-sm focus:outline-none focus:border-[var(--pc-accent-dim)] focus:ring-1 focus:ring-[var(--pc-accent-glow)] transition-all font-mono input-electric"
                     placeholder={field.placeholder}
                     value={values[field.key] ?? ''}
                     onChange={(e) => handleChange(field.key, e.target.value)}
@@ -436,15 +430,15 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
           )}
 
           {error && (
-            <div className="flex items-start gap-2 rounded-xl px-3.5 py-2.5" style={{ background: 'rgba(239, 68, 68, 0.08)', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
-              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: '#f87171' }} />
-              <p className="text-xs" style={{ color: '#f87171' }}>{error}</p>
+            <div className="flex items-start gap-2 rounded-xl px-3.5 py-2.5 border" style={{ background: 'rgba(239, 68, 68, 0.08)', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
+              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-status-error)' }} />
+              <p className="text-xs" style={{ color: 'var(--color-status-error)' }}>{error}</p>
             </div>
           )}
           {success && (
-            <div className="flex items-center gap-2 rounded-xl px-3.5 py-2.5" style={{ background: 'rgba(0, 230, 138, 0.08)', borderColor: 'rgba(0, 230, 138, 0.2)' }}>
-              <Check className="h-4 w-4" style={{ color: '#00e68a' }} />
-              <p className="text-xs" style={{ color: '#00e68a' }}>{t('integrations.saved') || 'Configuration saved successfully'}</p>
+            <div className="flex items-center gap-2 rounded-xl px-3.5 py-2.5 border" style={{ background: 'rgba(0, 230, 138, 0.08)', borderColor: 'rgba(0, 230, 138, 0.2)' }}>
+              <Check className="h-4 w-4" style={{ color: 'var(--color-status-success)' }} />
+              <p className="text-xs" style={{ color: 'var(--color-status-success)' }}>{t('integrations.saved') || 'Configuration saved successfully'}</p>
             </div>
           )}
         </div>
@@ -456,16 +450,14 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-semibold transition-all"
-              style={{ color: 'var(--pc-text-muted)', border: '1px solid var(--pc-border)', background: 'transparent' }}
+              className="px-4 py-2 rounded-xl text-xs font-semibold transition-all btn-secondary"
             >
               {t('common.cancel') || 'Cancel'}
             </button>
             <button
               onClick={handleSave}
               disabled={saving || loading}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all disabled:opacity-40"
-              style={{ background: 'var(--pc-accent)' }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all disabled:opacity-40 btn-electric"
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
               {t('common.save') || 'Save'}
