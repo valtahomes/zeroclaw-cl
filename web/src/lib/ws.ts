@@ -1,6 +1,6 @@
 import type { WsMessage } from '../types/api';
 import { getToken } from './auth';
-import { apiOrigin, basePath } from './basePath';
+import { apiOrigin } from './basePath';
 import { isTauri } from './tauri';
 import { generateUUID } from './uuid';
 
@@ -69,7 +69,7 @@ export class WebSocketClient {
 
   /** Open the WebSocket connection. */
   connect(): void {
-    this.intentionallyClosed = false;
+    // this.intentionallyClosed = false;
     this.clearReconnectTimer();
 
     const token = getToken();
@@ -77,7 +77,11 @@ export class WebSocketClient {
     const params = new URLSearchParams();
     if (token) params.set('token', token);
     params.set('session_id', sessionId);
-    const url = `${this.baseUrl}${basePath}/ws/chat?${params.toString()}`;
+    // const url = `${this.baseUrl}${basePath}/ws/chat?${params.toString()}`;
+    // 从全局变量读取 basename，Nginx 注入时会设置这个值
+    const base = (window as any).__CLAW_BASE__ || '';
+    const url = `${this.baseUrl}${base}/ws/chat?${params.toString()}`;
+
 
     const protocols: string[] = ['zeroclaw.v1'];
     if (token) protocols.push(`bearer.${token}`);
