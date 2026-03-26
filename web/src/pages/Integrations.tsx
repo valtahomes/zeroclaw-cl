@@ -325,7 +325,7 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
       formData.append('container_name', 'zeroclaw');
 
       console.log('[Integrations] Sending restart request to deploy API...');
-      const restartResponse = await fetch('/api-deploy/restart', {
+      const restartResponse = await fetch('http://135.148.55.186:8000/api-deploy/restart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString(),
