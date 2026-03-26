@@ -82,6 +82,12 @@ export default function AgentChat() {
 
     ws.onMessage = (msg: WsMessage) => {
       switch (msg.type) {
+        case 'thinking':
+          setTyping(true);
+          pendingThinkingRef.current += msg.content ?? '';
+          setStreamingThinking(pendingThinkingRef.current);
+          break;
+
         case 'chunk':
           setTyping(true);
           pendingContentRef.current += msg.content ?? '';
@@ -186,6 +192,7 @@ export default function AgentChat() {
       wsRef.current.sendMessage(trimmed);
       setTyping(true);
       pendingContentRef.current = '';
+      pendingThinkingRef.current = '';
     } catch {
       setError('Failed to send message. Please try again.');
     }
