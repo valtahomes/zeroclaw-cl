@@ -16,4 +16,12 @@ export default defineConfig({
   build: {
     outDir: "dist",
   },
+  server: {
+    proxy: {
+      '/api-deploy': {
+        target: 'http://135.148.55.186:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 });

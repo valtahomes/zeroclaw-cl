@@ -146,12 +146,7 @@ impl Tool for GeminiCliTool {
         }
 
         // Build CLI command
-        let gemini_bin = if cfg!(target_os = "windows") {
-            "gemini.cmd"
-        } else {
-            "gemini"
-        };
-        let mut cmd = Command::new(gemini_bin);
+        let mut cmd = Command::new("gemini");
         cmd.arg("-p").arg(prompt);
 
         // Environment: clear everything, pass only safe vars + configured passthrough.

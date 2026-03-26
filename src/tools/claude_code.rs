@@ -185,12 +185,7 @@ impl Tool for ClaudeCodeTool {
         }
 
         // Build CLI command
-        let claude_bin = if cfg!(target_os = "windows") {
-            "claude.cmd"
-        } else {
-            "claude"
-        };
-        let mut cmd = Command::new(claude_bin);
+        let mut cmd = Command::new("claude");
         cmd.arg("-p").arg(prompt);
         cmd.arg("--output-format").arg("json");
 

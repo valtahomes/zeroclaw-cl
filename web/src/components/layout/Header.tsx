@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { LogOut, Menu, Settings } from 'lucide-react';
+import { LogOut, Settings } from 'lucide-react';
 import { t } from '@/lib/i18n';
 import { useLocaleContext } from '@/App';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,11 +19,7 @@ const routeTitles: Record<string, string> = {
   '/doctor': 'nav.doctor',
 };
 
-interface HeaderProps {
-  onMenuToggle: () => void;
-}
-
-export default function Header({ onMenuToggle }: HeaderProps) {
+export default function Header() {
   const location = useLocation();
   const { logout } = useAuth();
   const { locale, setAppLocale } = useLocaleContext();
@@ -41,23 +37,8 @@ export default function Header({ onMenuToggle }: HeaderProps) {
   return (
     <>
       <header className="h-14 flex items-center justify-between px-6 border-b animate-fade-in" style={{ background: 'var(--pc-bg-surface)', borderColor: 'var(--pc-border)', backdropFilter: 'blur(12px)', }}>
-        <div className="flex items-center gap-3">
-          {/* Hamburger — visible only on mobile */}
-          <button
-            type="button"
-            onClick={onMenuToggle}
-            className="md:hidden p-1.5 -ml-1.5 rounded-lg transition-colors duration-200"
-            style={{ color: 'var(--pc-text-muted)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--pc-text-primary)'; e.currentTarget.style.background = 'var(--pc-hover)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--pc-text-muted)'; e.currentTarget.style.background = 'transparent'; }}
-            aria-label="Open menu"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-
-          {/* Page title */}
-          <h1 className="h-9 leading-9 text-lg font-semibold tracking-tight" style={{ color: 'var(--pc-text-primary)' }}>{pageTitle}</h1>
-        </div>
+        {/* Page title */}
+        <h1 className="h-9 leading-9 text-lg font-semibold tracking-tight" style={{ color: 'var(--pc-text-primary)' }}>{pageTitle}</h1>
 
         {/* Right-side controls */}
         <div className="flex items-center gap-2 h-9">
@@ -112,13 +93,12 @@ export default function Header({ onMenuToggle }: HeaderProps) {
             }}
           >
             <LogOut className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{t('auth.logout')}</span>
+            <span>{t('auth.logout')}</span>
           </button>
         </div>
       </header>
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
-
   );
 }

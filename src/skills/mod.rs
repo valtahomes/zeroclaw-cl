@@ -13,9 +13,53 @@ use zip::ZipArchive;
 mod audit;
 #[cfg(feature = "skill-creation")]
 pub mod creator;
-#[cfg(feature = "skill-creation")]
-pub mod improver;
 pub mod testing;
+
+// ── Public API types for REST API ───────────────────────────────
+
+/// Skill summary information for API responses
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillInfo {
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub author: Option<String>,
+    pub tools: Vec<SkillToolInfo>,
+    pub prompts_count: usize,
+    pub location: Option<String>,
+    pub always: bool,
+}
+
+/// Tool information within a skill for API responses
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillToolInfo {
+    pub name: String,
+    pub description: String,
+    pub kind: String,
+}
+
+impl From<&Skill> for SkillInfo {
+    fn from(skill: &Skill) -> Self {
+        SkillInfo {
+            name: skill.name.clone(),
+            description: skill.description.clone(),
+            version: skill.version.clone(),
+            author: skill.author.clone(),
+            tools: skill
+                .tools
+                .iter()
+                .map(|t| SkillToolInfo {
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    kind: t.kind.clone(),
+                })
+                .collect(),
+            prompts_count: skill.prompts.len(),
+            location: skill.location.as_ref().map(|p| p.display().to_string()),
+            always: skill.always,
+        }
+    }
+}
 
 const OPEN_SKILLS_REPO_URL: &str = "https://github.com/besoeasy/open-skills";
 const OPEN_SKILLS_SYNC_MARKER: &str = ".zeroclaw-open-skills-sync";
@@ -45,6 +89,8 @@ pub struct Skill {
     pub prompts: Vec<String>,
     #[serde(skip)]
     pub location: Option<PathBuf>,
+    #[serde(default)]
+    pub always: bool,
 }
 
 /// A tool defined by a skill (shell command, HTTP call, etc.)
@@ -82,12 +128,13 @@ struct SkillMeta {
     tags: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
 struct SkillMarkdownMeta {
     name: Option<String>,
     description: Option<String>,
     version: Option<String>,
     author: Option<String>,
+    #[serde(default)]
     tags: Vec<String>,
 }
 
@@ -545,6 +592,7 @@ fn load_skill_toml(path: &Path) -> Result<Skill> {
         tools: manifest.tools,
         prompts: manifest.prompts,
         location: Some(path.to_path_buf()),
+        always: false,
     })
 }
 
@@ -571,6 +619,7 @@ fn load_skill_md(path: &Path, dir: &Path) -> Result<Skill> {
         tools: Vec::new(),
         prompts: vec![parsed.body],
         location: Some(path.to_path_buf()),
+        always: false,
     })
 }
 
@@ -610,6 +659,7 @@ fn load_open_skill_md(path: &Path) -> Result<Skill> {
         tools: Vec::new(),
         prompts: vec![parsed.body],
         location: Some(path.to_path_buf()),
+        always: false,
     }))
 }
 
@@ -620,64 +670,15 @@ struct ParsedSkillMarkdown {
 
 fn parse_skill_markdown(content: &str) -> ParsedSkillMarkdown {
     if let Some((frontmatter, body)) = split_skill_frontmatter(content) {
-        let meta = parse_simple_frontmatter(&frontmatter);
-        return ParsedSkillMarkdown { meta, body };
+        if let Ok(meta) = serde_yaml::from_str::<SkillMarkdownMeta>(&frontmatter) {
+            return ParsedSkillMarkdown { meta, body };
+        }
     }
 
     ParsedSkillMarkdown {
         meta: SkillMarkdownMeta::default(),
         body: content.to_string(),
     }
-}
-
-/// Lightweight YAML-like frontmatter parser for simple `key: value` pairs.
-/// Replaces `serde_yaml` to avoid pulling in the full YAML parser (~30KB)
-/// for a struct with only 5 optional string fields.
-fn parse_simple_frontmatter(s: &str) -> SkillMarkdownMeta {
-    let mut meta = SkillMarkdownMeta::default();
-    let mut collecting_tags = false;
-    for line in s.lines() {
-        // Handle YAML list items under `tags:` (e.g. "  - parser")
-        if collecting_tags {
-            let trimmed = line.trim();
-            if let Some(item) = trimmed.strip_prefix("- ") {
-                let tag = item.trim().trim_matches('"').trim_matches('\'');
-                if !tag.is_empty() {
-                    meta.tags.push(tag.to_string());
-                }
-                continue;
-            }
-            // Non-list-item line → stop collecting tags
-            collecting_tags = false;
-        }
-        let Some((key, val)) = line.split_once(':') else {
-            continue;
-        };
-        let key = key.trim();
-        let val = val.trim().trim_matches('"').trim_matches('\'');
-        match key {
-            "name" => meta.name = Some(val.to_string()),
-            "description" => meta.description = Some(val.to_string()),
-            "version" => meta.version = Some(val.to_string()),
-            "author" => meta.author = Some(val.to_string()),
-            "tags" => {
-                if val.is_empty() {
-                    // YAML block list follows on subsequent lines
-                    collecting_tags = true;
-                } else {
-                    // Inline: [a, b, c] or comma-separated
-                    let val = val.trim_start_matches('[').trim_end_matches(']');
-                    meta.tags = val
-                        .split(',')
-                        .map(|t| t.trim().trim_matches('"').trim_matches('\'').to_string())
-                        .filter(|t| !t.is_empty())
-                        .collect();
-                }
-            }
-            _ => {}
-        }
-    }
-    meta
 }
 
 fn split_skill_frontmatter(content: &str) -> Option<(String, String)> {
@@ -1526,6 +1527,93 @@ pub fn handle_command(command: crate::SkillCommands, config: &crate::config::Con
             Ok(())
         }
     }
+}
+
+// ── Public API functions for REST API ──────────────────────────
+
+/// List all installed skills — for API and CLI shared use
+pub fn list_skills(config: &crate::config::Config) -> Result<Vec<SkillInfo>> {
+    let skills = load_skills_with_config(&config.workspace_dir, config);
+    Ok(skills.iter().map(SkillInfo::from).collect())
+}
+
+/// Install a skill from source (Git URL or local path)
+pub async fn install_skill_from_source(
+    source: &str,
+    config: &crate::config::Config,
+) -> Result<(String, audit::SkillAuditReport)> {
+    let skills_path = skills_dir(&config.workspace_dir);
+    std::fs::create_dir_all(&skills_path)?;
+
+    let (installed_dir, _files_scanned) = if is_clawhub_source(source) {
+        install_clawhub_skill_source(source, &skills_path, config.skills.allow_scripts)
+            .with_context(|| format!("failed to install skill from ClawHub: {source}"))?
+    } else if is_git_source(source) {
+        install_git_skill_source(source, &skills_path, config.skills.allow_scripts)
+            .with_context(|| format!("failed to install git skill source: {source}"))?
+    } else {
+        install_local_skill_source(source, &skills_path, config.skills.allow_scripts)
+            .with_context(|| format!("failed to install local skill source: {source}"))?
+    };
+
+    let skill_name = installed_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let report = audit::audit_skill_directory_with_options(
+        &installed_dir,
+        audit::SkillAuditOptions {
+            allow_scripts: config.skills.allow_scripts,
+        },
+    )?;
+
+    Ok((skill_name, report))
+}
+
+/// Remove a skill by name
+pub fn remove_skill(name: &str, config: &crate::config::Config) -> Result<bool> {
+    // Reject path traversal attempts
+    if name.contains("..") || name.contains('/') || name.contains('\\') {
+        anyhow::bail!("Invalid skill name: {name}");
+    }
+
+    let skill_path = skills_dir(&config.workspace_dir).join(name);
+
+    // Verify the resolved path is actually inside the skills directory
+    let canonical_skills = skills_dir(&config.workspace_dir)
+        .canonicalize()
+        .unwrap_or_else(|_| skills_dir(&config.workspace_dir));
+    if let Ok(canonical_skill) = skill_path.canonicalize() {
+        if !canonical_skill.starts_with(&canonical_skills) {
+            anyhow::bail!("Skill path escapes skills directory: {name}");
+        }
+    }
+
+    if !skill_path.exists() {
+        return Ok(false);
+    }
+
+    std::fs::remove_dir_all(&skill_path)?;
+    Ok(true)
+}
+
+/// Audit a skill by name
+pub fn audit_skill_by_name(
+    name: &str,
+    config: &crate::config::Config,
+) -> Result<audit::SkillAuditReport> {
+    let skill_path = skills_dir(&config.workspace_dir).join(name);
+    if !skill_path.exists() {
+        anyhow::bail!("Skill '{}' not found", name);
+    }
+    audit::audit_skill_directory_with_options(
+        &skill_path,
+        audit::SkillAuditOptions {
+            allow_scripts: config.skills.allow_scripts,
+        },
+    )
 }
 
 #[cfg(test)]

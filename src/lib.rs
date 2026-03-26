@@ -46,7 +46,7 @@ pub(crate) mod cli_input;
 pub mod commands;
 pub mod config;
 pub(crate) mod cost;
-pub mod cron;
+pub(crate) mod cron;
 pub(crate) mod daemon;
 pub(crate) mod doctor;
 pub mod gateway;
@@ -74,7 +74,6 @@ pub(crate) mod service;
 pub(crate) mod skills;
 pub mod sop;
 pub mod tools;
-pub(crate) mod trust;
 pub(crate) mod tunnel;
 pub(crate) mod util;
 pub mod verifiable_intent;
@@ -165,15 +164,6 @@ pub enum ServiceCommands {
     Status,
     /// Uninstall daemon service unit
     Uninstall,
-    /// Tail daemon service logs
-    Logs {
-        /// Number of lines to show (default: 50)
-        #[arg(short = 'n', long, default_value = "50")]
-        lines: usize,
-        /// Follow log output (like tail -f)
-        #[arg(short, long)]
-        follow: bool,
-    },
 }
 
 /// Channel management subcommands

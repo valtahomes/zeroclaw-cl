@@ -23,7 +23,7 @@ env:
   CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  RELEASE_CARGO_FEATURES: channel-matrix,channel-lark,whatsapp-web
+  RELEASE_CARGO_FEATURES: channel-matrix,channel-lark,memory-postgres
 
 jobs:
   validate:
@@ -106,16 +106,9 @@ jobs:
         id: notes
         shell: bash
         env:
-          INPUT_VERSION: ${{ inputs.version || '' }}
-          REF_NAME: ${{ github.ref_name }}
-          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-
-          # Resolve version from tag push or manual input
-          if [[ "$EVENT_NAME" == "push" ]]; then
-            INPUT_VERSION="${REF_NAME#v}"
-          fi
 
           # Find the previous stable tag (exclude beta tags)
           PREV_TAG=$(git tag --sort=-creatordate | grep -vE '\-beta\.' | grep -v "^v${INPUT_VERSION}$" | head -1 || echo "")
@@ -268,10 +261,6 @@ jobs:
           else
             cargo build --release --locked --features "${{ env.RELEASE_CARGO_FEATURES }}" --target ${{ matrix.target }}
           fi
-
-      - name: Check binary size
-        shell: bash
-        run: bash scripts/ci/check_binary_size.sh "target/${{ matrix.target }}/release/${{ matrix.artifact }}" "${{ matrix.target }}"
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
@@ -575,23 +564,13 @@ jobs:
       dry_run: false
     secrets: inherit
 
-  # ── Post-publish: announce after release + website are live ───────────
-  # Docker push can be slow; don't let it block announcements.
+  # ── Post-publish: tweet after release + website are live ──────────────
+  # Docker push can be slow; don't let it block the tweet.
   tweet:
     name: Tweet Release
     needs: [validate, publish, redeploy-website]
     if: ${{ !cancelled() && needs.publish.result == 'success' }}
     uses: ./.github/workflows/tweet-release.yml
-    with:
-      release_tag: ${{ needs.validate.outputs.tag }}
-      release_url: https://github.com/zeroclaw-labs/zeroclaw/releases/tag/${{ needs.validate.outputs.tag }}
-    secrets: inherit
-
-  discord:
-    name: Discord Announcement
-    needs: [validate, publish, redeploy-website]
-    if: ${{ !cancelled() && needs.publish.result == 'success' }}
-    uses: ./.github/workflows/discord-release.yml
     with:
       release_tag: ${{ needs.validate.outputs.tag }}
       release_url: https://github.com/zeroclaw-labs/zeroclaw/releases/tag/${{ needs.validate.outputs.tag }}

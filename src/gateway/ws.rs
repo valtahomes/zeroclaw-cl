@@ -347,6 +347,21 @@ async fn handle_socket(
             continue;
         }
 
+        // Handle /new command to clear conversation history
+        if content == "/new" {
+            agent.clear_history();
+            // Delete persisted messages for this session
+            if let Some(ref backend) = state.session_backend {
+                let _ = backend.delete_session(&session_key);
+            }
+            let done = serde_json::json!({
+                "type": "done",
+                "full_response": "Conversation cleared. Ready for new chat.",
+            });
+            let _ = sender.send(Message::Text(done.to_string().into())).await;
+            continue;
+        }
+
         // Persist user message
         if let Some(ref backend) = state.session_backend {
             let user_msg = crate::providers::ChatMessage::user(&content);
@@ -402,9 +417,6 @@ async fn process_chat_message(
             let ws_msg = match event {
                 TurnEvent::Chunk { delta } => {
                     serde_json::json!({ "type": "chunk", "content": delta })
-                }
-                TurnEvent::Thinking { delta } => {
-                    serde_json::json!({ "type": "thinking", "content": delta })
                 }
                 TurnEvent::ToolCall { name, args } => {
                     serde_json::json!({ "type": "tool_call", "name": name, "args": args })

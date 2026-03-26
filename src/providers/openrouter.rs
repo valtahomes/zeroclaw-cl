@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 pub struct OpenRouterProvider {
     credential: Option<String>,
     timeout_secs: u64,
-    max_tokens: Option<u32>,
 }
 
 const DEFAULT_OPENROUTER_TIMEOUT_SECS: u64 = 120;
@@ -23,8 +22,6 @@ struct ChatRequest {
     model: String,
     messages: Vec<Message>,
     temperature: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -76,8 +73,6 @@ struct NativeChatRequest {
     tools: Option<Vec<NativeToolSpec>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -162,19 +157,12 @@ impl OpenRouterProvider {
             timeout_secs: timeout_secs
                 .filter(|secs| *secs > 0)
                 .unwrap_or(DEFAULT_OPENROUTER_TIMEOUT_SECS),
-            max_tokens: None,
         }
     }
 
     /// Override the HTTP request timeout for LLM API calls.
     pub fn with_timeout_secs(mut self, secs: u64) -> Self {
         self.timeout_secs = secs;
-        self
-    }
-
-    /// Set the maximum output tokens for API requests.
-    pub fn with_max_tokens(mut self, max_tokens: Option<u32>) -> Self {
-        self.max_tokens = max_tokens;
         self
     }
 
@@ -418,7 +406,6 @@ impl Provider for OpenRouterProvider {
             model: model.to_string(),
             messages,
             temperature,
-            max_tokens: self.max_tokens,
         };
 
         let response = self
@@ -468,7 +455,6 @@ impl Provider for OpenRouterProvider {
             model: model.to_string(),
             messages: api_messages,
             temperature,
-            max_tokens: self.max_tokens,
         };
 
         let response = self
@@ -516,7 +502,6 @@ impl Provider for OpenRouterProvider {
             temperature,
             tool_choice: tools.as_ref().map(|_| "auto".to_string()),
             tools,
-            max_tokens: self.max_tokens,
         };
 
         let response = self
@@ -611,7 +596,6 @@ impl Provider for OpenRouterProvider {
             temperature,
             tool_choice: native_tools.as_ref().map(|_| "auto".to_string()),
             tools: native_tools,
-            max_tokens: self.max_tokens,
         };
 
         let response = self
@@ -753,7 +737,6 @@ mod tests {
                 },
             ],
             temperature: 0.5,
-            max_tokens: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -787,7 +770,6 @@ mod tests {
                 })
                 .collect(),
             temperature: 0.0,
-            max_tokens: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();

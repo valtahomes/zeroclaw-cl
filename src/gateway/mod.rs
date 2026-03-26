@@ -11,13 +11,10 @@ pub mod api;
 pub mod api_pairing;
 #[cfg(feature = "plugins-wasm")]
 pub mod api_plugins;
-#[cfg(feature = "webauthn")]
-pub mod api_webauthn;
 pub mod canvas;
 pub mod nodes;
 pub mod sse;
 pub mod static_files;
-pub mod tls;
 pub mod ws;
 
 use crate::channels::{
@@ -365,9 +362,6 @@ pub struct AppState {
     pub pending_pairings: Option<Arc<api_pairing::PairingStore>>,
     /// Shared canvas store for Live Canvas (A2UI) system
     pub canvas_store: CanvasStore,
-    /// WebAuthn state for hardware key authentication (optional, requires `webauthn` feature)
-    #[cfg(feature = "webauthn")]
-    pub webauthn: Option<Arc<api_webauthn::WebAuthnState>>,
 }
 
 /// Run the HTTP gateway using axum with proper HTTP/1.1 compliance.
@@ -414,7 +408,6 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
             provider_timeout_secs: Some(config.provider_timeout_secs),
             extra_headers: config.extra_headers.clone(),
             api_path: config.api_path.clone(),
-            provider_max_tokens: config.provider_max_tokens,
         },
     )?);
     let model = config
@@ -453,7 +446,6 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         _reaction_handle_gw,
         _channel_map_handle,
         _ask_user_handle_gw,
-        _escalate_handle_gw,
     ) = tools::all_tools_with_runtime(
         Arc::new(config.clone()),
         &security,
@@ -846,30 +838,6 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         pending_pairings,
         path_prefix: path_prefix.unwrap_or("").to_string(),
         canvas_store,
-        #[cfg(feature = "webauthn")]
-        webauthn: if config.security.webauthn.enabled {
-            let secret_store = Arc::new(crate::security::SecretStore::new(
-                &config.workspace_dir,
-                true,
-            ));
-            let wa_config = crate::security::webauthn::WebAuthnConfig {
-                enabled: true,
-                rp_id: config.security.webauthn.rp_id.clone(),
-                rp_origin: config.security.webauthn.rp_origin.clone(),
-                rp_name: config.security.webauthn.rp_name.clone(),
-            };
-            Some(Arc::new(api_webauthn::WebAuthnState {
-                manager: crate::security::webauthn::WebAuthnManager::new(
-                    wa_config,
-                    secret_store,
-                    &config.workspace_dir,
-                ),
-                pending_registrations: parking_lot::Mutex::new(std::collections::HashMap::new()),
-                pending_authentications: parking_lot::Mutex::new(std::collections::HashMap::new()),
-            }))
-        } else {
-            None
-        },
     };
 
     // Config PUT needs larger body limit (1MB)
@@ -926,6 +894,11 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         .route("/api/memory/{key}", delete(api::handle_api_memory_delete))
         .route("/api/cost", get(api::handle_api_cost))
         .route("/api/cli-tools", get(api::handle_api_cli_tools))
+        // ── Skills API ──
+        .route("/api/skills", get(api::handle_api_skills_list))
+        .route("/api/skills/install", post(api::handle_api_skills_install))
+        .route("/api/skills/audit", post(api::handle_api_skills_audit))
+        .route("/api/skills/{name}", delete(api::handle_api_skills_remove))
         .route("/api/health", get(api::handle_api_health))
         .route("/api/sessions", get(api::handle_api_sessions_list))
         .route("/api/sessions/{id}", delete(api::handle_api_session_delete).put(api::handle_api_session_rename))
@@ -949,34 +922,6 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         .route(
             "/api/canvas/{id}/history",
             get(canvas::handle_canvas_history),
-        );
-
-    // ── WebAuthn hardware key authentication API (requires webauthn feature) ──
-    #[cfg(feature = "webauthn")]
-    let inner = inner
-        .route(
-            "/api/webauthn/register/start",
-            post(api_webauthn::handle_register_start),
-        )
-        .route(
-            "/api/webauthn/register/finish",
-            post(api_webauthn::handle_register_finish),
-        )
-        .route(
-            "/api/webauthn/auth/start",
-            post(api_webauthn::handle_auth_start),
-        )
-        .route(
-            "/api/webauthn/auth/finish",
-            post(api_webauthn::handle_auth_finish),
-        )
-        .route(
-            "/api/webauthn/credentials",
-            get(api_webauthn::handle_list_credentials),
-        )
-        .route(
-            "/api/webauthn/credentials/{id}",
-            delete(api_webauthn::handle_delete_credential),
         );
 
     // ── Plugin management API (requires plugins-wasm feature) ──
@@ -1021,81 +966,16 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         inner
     };
 
-    // ── TLS / mTLS setup ───────────────────────────────────────────
-    let tls_acceptor = match &config.gateway.tls {
-        Some(tls_cfg) if tls_cfg.enabled => {
-            let has_mtls = tls_cfg.client_auth.as_ref().is_some_and(|ca| ca.enabled);
-            if has_mtls {
-                tracing::info!("TLS enabled with mutual TLS (mTLS) client verification");
-            } else {
-                tracing::info!("TLS enabled (no client certificate requirement)");
-            }
-            Some(tls::build_tls_acceptor(tls_cfg)?)
-        }
-        _ => None,
-    };
-
-    if let Some(tls_acceptor) = tls_acceptor {
-        // Manual TLS accept loop — serves each connection via hyper.
-        let app = app.into_make_service_with_connect_info::<SocketAddr>();
-        let mut app = app;
-
-        let mut shutdown_signal = shutdown_rx;
-        loop {
-            tokio::select! {
-                conn = listener.accept() => {
-                    let (tcp_stream, remote_addr) = conn?;
-                    let tls_acceptor = tls_acceptor.clone();
-                    let svc = tower::MakeService::<
-                        SocketAddr,
-                        hyper::Request<hyper::body::Incoming>,
-                    >::make_service(&mut app, remote_addr)
-                    .await
-                    .expect("infallible make_service");
-
-                    tokio::spawn(async move {
-                        let tls_stream = match tls_acceptor.accept(tcp_stream).await {
-                            Ok(s) => s,
-                            Err(e) => {
-                                tracing::debug!("TLS handshake failed from {remote_addr}: {e}");
-                                return;
-                            }
-                        };
-                        let io = hyper_util::rt::TokioIo::new(tls_stream);
-                        let hyper_svc = hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
-                            let mut svc = svc.clone();
-                            async move {
-                                tower::Service::call(&mut svc, req).await
-                            }
-                        });
-                        if let Err(e) = hyper_util::server::conn::auto::Builder::new(
-                            hyper_util::rt::TokioExecutor::new(),
-                        )
-                        .serve_connection(io, hyper_svc)
-                        .await
-                        {
-                            tracing::debug!("connection error from {remote_addr}: {e}");
-                        }
-                    });
-                }
-                _ = shutdown_signal.changed() => {
-                    tracing::info!("🦀 ZeroClaw Gateway shutting down...");
-                    break;
-                }
-            }
-        }
-    } else {
-        // Plain TCP — use axum's built-in serve.
-        axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(async move {
-            let _ = shutdown_rx.changed().await;
-            tracing::info!("🦀 ZeroClaw Gateway shutting down...");
-        })
-        .await?;
-    }
+    // Run the server with graceful shutdown
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        let _ = shutdown_rx.changed().await;
+        tracing::info!("🦀 ZeroClaw Gateway shutting down...");
+    })
+    .await?;
 
     Ok(())
 }
@@ -1122,32 +1002,17 @@ fn prometheus_disabled_hint() -> String {
     String::from("# Prometheus backend not enabled. Set [observability] backend = \"prometheus\" in config.\n")
 }
 
-#[cfg(feature = "observability-prometheus")]
-fn prometheus_observer_from_state(
-    observer: &dyn crate::observability::Observer,
-) -> Option<&crate::observability::PrometheusObserver> {
-    observer
-        .as_any()
-        .downcast_ref::<crate::observability::PrometheusObserver>()
-        .or_else(|| {
-            observer
-                .as_any()
-                .downcast_ref::<sse::BroadcastObserver>()
-                .and_then(|broadcast| {
-                    broadcast
-                        .inner()
-                        .as_any()
-                        .downcast_ref::<crate::observability::PrometheusObserver>()
-                })
-        })
-}
-
 /// GET /metrics — Prometheus text exposition format
 async fn handle_metrics(State(state): State<AppState>) -> impl IntoResponse {
     let body = {
         #[cfg(feature = "observability-prometheus")]
         {
-            if let Some(prom) = prometheus_observer_from_state(state.observer.as_ref()) {
+            if let Some(prom) = state
+                .observer
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::observability::PrometheusObserver>()
+            {
                 prom.encode()
             } else {
                 prometheus_disabled_hint()
@@ -2276,8 +2141,6 @@ mod tests {
             device_registry: None,
             pending_pairings: None,
             canvas_store: CanvasStore::new(),
-            #[cfg(feature = "webauthn")]
-            webauthn: None,
         };
 
         let response = handle_metrics(State(state)).await.into_response();
@@ -2298,17 +2161,13 @@ mod tests {
     #[cfg(feature = "observability-prometheus")]
     #[tokio::test]
     async fn metrics_endpoint_renders_prometheus_output() {
-        let event_tx = tokio::sync::broadcast::channel(16).0;
-        let wrapped = sse::BroadcastObserver::new(
-            Box::new(crate::observability::PrometheusObserver::new()),
-            event_tx.clone(),
-        );
+        let prom = Arc::new(crate::observability::PrometheusObserver::new());
         crate::observability::Observer::record_event(
-            &wrapped,
+            prom.as_ref(),
             &crate::observability::ObserverEvent::HeartbeatTick,
         );
 
-        let observer: Arc<dyn crate::observability::Observer> = Arc::new(wrapped);
+        let observer: Arc<dyn crate::observability::Observer> = prom;
         let state = AppState {
             config: Arc::new(Mutex::new(Config::default())),
             provider: Arc::new(MockProvider::default()),
@@ -2332,7 +2191,7 @@ mod tests {
             observer,
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
-            event_tx,
+            event_tx: tokio::sync::broadcast::channel(16).0,
             shutdown_tx: tokio::sync::watch::channel(false).0,
             node_registry: Arc::new(nodes::NodeRegistry::new(16)),
             path_prefix: String::new(),
@@ -2340,8 +2199,6 @@ mod tests {
             device_registry: None,
             pending_pairings: None,
             canvas_store: CanvasStore::new(),
-            #[cfg(feature = "webauthn")]
-            webauthn: None,
         };
 
         let response = handle_metrics(State(state)).await.into_response();
@@ -2730,8 +2587,6 @@ mod tests {
             device_registry: None,
             pending_pairings: None,
             canvas_store: CanvasStore::new(),
-            #[cfg(feature = "webauthn")]
-            webauthn: None,
         };
 
         let mut headers = HeaderMap::new();
@@ -2804,8 +2659,6 @@ mod tests {
             device_registry: None,
             pending_pairings: None,
             canvas_store: CanvasStore::new(),
-            #[cfg(feature = "webauthn")]
-            webauthn: None,
         };
 
         let headers = HeaderMap::new();
@@ -2890,8 +2743,6 @@ mod tests {
             device_registry: None,
             pending_pairings: None,
             canvas_store: CanvasStore::new(),
-            #[cfg(feature = "webauthn")]
-            webauthn: None,
         };
 
         let response = handle_webhook(
@@ -2948,8 +2799,6 @@ mod tests {
             device_registry: None,
             pending_pairings: None,
             canvas_store: CanvasStore::new(),
-            #[cfg(feature = "webauthn")]
-            webauthn: None,
         };
 
         let mut headers = HeaderMap::new();
@@ -3011,8 +2860,6 @@ mod tests {
             device_registry: None,
             pending_pairings: None,
             canvas_store: CanvasStore::new(),
-            #[cfg(feature = "webauthn")]
-            webauthn: None,
         };
 
         let mut headers = HeaderMap::new();
@@ -3079,8 +2926,6 @@ mod tests {
             device_registry: None,
             pending_pairings: None,
             canvas_store: CanvasStore::new(),
-            #[cfg(feature = "webauthn")]
-            webauthn: None,
         };
 
         let response = Box::pin(handle_nextcloud_talk_webhook(
@@ -3143,8 +2988,6 @@ mod tests {
             device_registry: None,
             pending_pairings: None,
             canvas_store: CanvasStore::new(),
-            #[cfg(feature = "webauthn")]
-            webauthn: None,
         };
 
         let mut headers = HeaderMap::new();

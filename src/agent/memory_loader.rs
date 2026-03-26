@@ -74,7 +74,7 @@ impl MemoryLoader for DefaultMemoryLoader {
             return Ok(String::new());
         }
 
-        context.push_str("[/Memory context]\n\n");
+        context.push('\n');
         Ok(context)
     }
 }

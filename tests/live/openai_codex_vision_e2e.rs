@@ -153,7 +153,6 @@ async fn openai_codex_second_vision_support() -> Result<()> {
         reasoning_enabled: None,
         reasoning_effort: None,
         provider_timeout_secs: None,
-        provider_max_tokens: None,
         extra_headers: std::collections::HashMap::new(),
         api_path: None,
     };

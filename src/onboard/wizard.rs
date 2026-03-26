@@ -141,11 +141,9 @@ pub async fn run_wizard(force: bool) -> Result<Config> {
         model_providers: std::collections::HashMap::new(),
         default_temperature: 0.7,
         provider_timeout_secs: 120,
-        provider_max_tokens: None,
         extra_headers: std::collections::HashMap::new(),
         observability: ObservabilityConfig::default(),
         autonomy: AutonomyConfig::default(),
-        trust: crate::trust::TrustConfig::default(),
         backup: crate::config::BackupConfig::default(),
         data_retention: crate::config::DataRetentionConfig::default(),
         cloud_ops: crate::config::CloudOpsConfig::default(),
@@ -158,7 +156,6 @@ pub async fn run_wizard(force: bool) -> Result<Config> {
         agent: crate::config::schema::AgentConfig::default(),
         pacing: crate::config::PacingConfig::default(),
         skills: crate::config::SkillsConfig::default(),
-        pipeline: crate::config::PipelineConfig::default(),
         model_routes: Vec::new(),
         embedding_routes: Vec::new(),
         heartbeat: HeartbeatConfig::default(),
@@ -417,7 +414,6 @@ fn memory_config_defaults_for_backend(backend: &str) -> MemoryConfig {
         embedding_dimensions: 1536,
         vector_weight: 0.7,
         keyword_weight: 0.3,
-        search_mode: crate::config::SearchMode::default(),
         min_relevance_score: 0.4,
         embedding_cache_size: if profile.uses_sqlite_hygiene {
             10000
@@ -585,11 +581,9 @@ async fn run_quick_setup_with_home(
         model_providers: std::collections::HashMap::new(),
         default_temperature: 0.7,
         provider_timeout_secs: 120,
-        provider_max_tokens: None,
         extra_headers: std::collections::HashMap::new(),
         observability: ObservabilityConfig::default(),
         autonomy: AutonomyConfig::default(),
-        trust: crate::trust::TrustConfig::default(),
         backup: crate::config::BackupConfig::default(),
         data_retention: crate::config::DataRetentionConfig::default(),
         cloud_ops: crate::config::CloudOpsConfig::default(),
@@ -602,7 +596,6 @@ async fn run_quick_setup_with_home(
         agent: crate::config::schema::AgentConfig::default(),
         pacing: crate::config::PacingConfig::default(),
         skills: crate::config::SkillsConfig::default(),
-        pipeline: crate::config::PipelineConfig::default(),
         model_routes: Vec::new(),
         embedding_routes: Vec::new(),
         heartbeat: HeartbeatConfig::default(),
@@ -1383,8 +1376,8 @@ fn models_endpoint_for_provider(provider_name: &str) -> Option<&'static str> {
     }
 }
 
-fn build_model_fetch_client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
+fn build_model_fetch_client() -> Result<reqwest::blocking::Client> {
+    reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(8))
         .connect_timeout(Duration::from_secs(4))
         .build()
@@ -1467,7 +1460,7 @@ fn parse_ollama_model_ids(payload: &Value) -> Vec<String> {
     normalize_model_ids(ids)
 }
 
-async fn fetch_openai_compatible_models(
+fn fetch_openai_compatible_models(
     endpoint: &str,
     api_key: Option<&str>,
     allow_unauthenticated: bool,
@@ -1483,17 +1476,15 @@ async fn fetch_openai_compatible_models(
 
     let payload: Value = request
         .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
+        .and_then(reqwest::blocking::Response::error_for_status)
         .with_context(|| format!("model fetch failed: GET {endpoint}"))?
         .json()
-        .await
         .context("failed to parse model list response")?;
 
     Ok(parse_openai_compatible_model_ids(&payload))
 }
 
-async fn fetch_openrouter_models(api_key: Option<&str>) -> Result<Vec<String>> {
+fn fetch_openrouter_models(api_key: Option<&str>) -> Result<Vec<String>> {
     let client = build_model_fetch_client()?;
     let mut request = client.get("https://openrouter.ai/api/v1/models");
     if let Some(api_key) = api_key {
@@ -1502,17 +1493,15 @@ async fn fetch_openrouter_models(api_key: Option<&str>) -> Result<Vec<String>> {
 
     let payload: Value = request
         .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
+        .and_then(reqwest::blocking::Response::error_for_status)
         .context("model fetch failed: GET https://openrouter.ai/api/v1/models")?
         .json()
-        .await
         .context("failed to parse OpenRouter model list response")?;
 
     Ok(parse_openai_compatible_model_ids(&payload))
 }
 
-async fn fetch_anthropic_models(api_key: Option<&str>) -> Result<Vec<String>> {
+fn fetch_anthropic_models(api_key: Option<&str>) -> Result<Vec<String>> {
     let Some(api_key) = api_key else {
         bail!("Anthropic model fetch requires API key or OAuth token");
     };
@@ -1532,24 +1521,22 @@ async fn fetch_anthropic_models(api_key: Option<&str>) -> Result<Vec<String>> {
 
     let response = request
         .send()
-        .await
         .context("model fetch failed: GET https://api.anthropic.com/v1/models")?;
 
     let status = response.status();
     if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
+        let body = response.text().unwrap_or_default();
         bail!("Anthropic model list request failed (HTTP {status}): {body}");
     }
 
     let payload: Value = response
         .json()
-        .await
         .context("failed to parse Anthropic model list response")?;
 
     Ok(parse_openai_compatible_model_ids(&payload))
 }
 
-async fn fetch_gemini_models(api_key: Option<&str>) -> Result<Vec<String>> {
+fn fetch_gemini_models(api_key: Option<&str>) -> Result<Vec<String>> {
     let Some(api_key) = api_key else {
         bail!("Gemini model fetch requires API key");
     };
@@ -1559,26 +1546,22 @@ async fn fetch_gemini_models(api_key: Option<&str>) -> Result<Vec<String>> {
         .get("https://generativelanguage.googleapis.com/v1beta/models")
         .query(&[("key", api_key), ("pageSize", "200")])
         .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
+        .and_then(reqwest::blocking::Response::error_for_status)
         .context("model fetch failed: GET Gemini models")?
         .json()
-        .await
         .context("failed to parse Gemini model list response")?;
 
     Ok(parse_gemini_model_ids(&payload))
 }
 
-async fn fetch_ollama_models() -> Result<Vec<String>> {
+fn fetch_ollama_models() -> Result<Vec<String>> {
     let client = build_model_fetch_client()?;
     let payload: Value = client
         .get("http://localhost:11434/api/tags")
         .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
+        .and_then(reqwest::blocking::Response::error_for_status)
         .context("model fetch failed: GET http://localhost:11434/api/tags")?
         .json()
-        .await
         .context("failed to parse Ollama model list response")?;
 
     Ok(parse_ollama_model_ids(&payload))
@@ -1663,7 +1646,7 @@ fn resolve_live_models_endpoint(
     models_endpoint_for_provider(provider_name).map(str::to_string)
 }
 
-async fn fetch_live_models_for_provider(
+fn fetch_live_models_for_provider(
     provider_name: &str,
     api_key: &str,
     provider_api_url: Option<&str>,
@@ -1695,9 +1678,9 @@ async fn fetch_live_models_for_provider(
     };
 
     let models = match provider_name {
-        "openrouter" => fetch_openrouter_models(api_key.as_deref()).await?,
-        "anthropic" => fetch_anthropic_models(api_key.as_deref()).await?,
-        "gemini" => fetch_gemini_models(api_key.as_deref()).await?,
+        "openrouter" => fetch_openrouter_models(api_key.as_deref())?,
+        "anthropic" => fetch_anthropic_models(api_key.as_deref())?,
+        "gemini" => fetch_gemini_models(api_key.as_deref())?,
         "ollama" => {
             if ollama_remote {
                 // Remote Ollama endpoints can serve cloud-routed models.
@@ -1716,8 +1699,7 @@ async fn fetch_live_models_for_provider(
                 ]
             } else {
                 // Local endpoints should not surface cloud-only suffixes.
-                fetch_ollama_models()
-                    .await?
+                fetch_ollama_models()?
                     .into_iter()
                     .filter(|model_id| !model_id.ends_with(":cloud"))
                     .collect()
@@ -1729,8 +1711,11 @@ async fn fetch_live_models_for_provider(
             {
                 let allow_unauthenticated =
                     allows_unauthenticated_model_fetch(requested_provider_name);
-                fetch_openai_compatible_models(&endpoint, api_key.as_deref(), allow_unauthenticated)
-                    .await?
+                fetch_openai_compatible_models(
+                    &endpoint,
+                    api_key.as_deref(),
+                    allow_unauthenticated,
+                )?
             } else {
                 Vec::new()
             }
@@ -1958,8 +1943,7 @@ pub async fn run_models_refresh(
 
     let api_key = config.api_key.clone().unwrap_or_default();
 
-    match fetch_live_models_for_provider(&provider_name, &api_key, config.api_url.as_deref()).await
-    {
+    match fetch_live_models_for_provider(&provider_name, &api_key, config.api_url.as_deref()) {
         Ok(models) if !models.is_empty() => {
             cache_live_models_for_provider(&config.workspace_dir, &provider_name, &models).await?;
             println!(
@@ -2912,9 +2896,7 @@ async fn setup_provider(workspace_dir: &Path) -> Result<(String, String, String,
                     provider_name,
                     &api_key,
                     provider_api_url.as_deref(),
-                )
-                .await
-                {
+                ) {
                     Ok(live_model_ids) if !live_model_ids.is_empty() => {
                         cache_live_models_for_provider(
                             workspace_dir,
@@ -3940,9 +3922,6 @@ fn setup_channels() -> Result<ChannelsConfig> {
                     interrupt_on_new_message: false,
                     mention_only: false,
                     proxy_url: None,
-                    stream_mode: StreamMode::MultiMessage,
-                    draft_update_interval_ms: 1000,
-                    multi_message_delay_ms: 800,
                 });
             }
             ChannelMenuChoice::Slack => {
@@ -4074,10 +4053,7 @@ fn setup_channels() -> Result<ChannelsConfig> {
                     interrupt_on_new_message: false,
                     thread_replies: None,
                     mention_only: false,
-                    use_markdown_blocks: false,
                     proxy_url: None,
-                    stream_drafts: false,
-                    draft_update_interval_ms: 1200,
                 });
             }
             ChannelMenuChoice::IMessage => {
@@ -4236,9 +4212,6 @@ fn setup_channels() -> Result<ChannelsConfig> {
                     allowed_users,
                     allowed_rooms: vec![],
                     interrupt_on_new_message: false,
-                    stream_mode: StreamMode::Partial,
-                    draft_update_interval_ms: 1500,
-                    multi_message_delay_ms: 800,
                 });
             }
             ChannelMenuChoice::Signal => {
@@ -4435,8 +4408,6 @@ fn setup_channels() -> Result<ChannelsConfig> {
                         dm_policy: WhatsAppChatPolicy::default(),
                         group_policy: WhatsAppChatPolicy::default(),
                         self_chat_mode: false,
-                        dm_mention_patterns: vec![],
-                        group_mention_patterns: vec![],
                         proxy_url: None,
                     });
 
@@ -4543,8 +4514,6 @@ fn setup_channels() -> Result<ChannelsConfig> {
                     dm_policy: WhatsAppChatPolicy::default(),
                     group_policy: WhatsAppChatPolicy::default(),
                     self_chat_mode: false,
-                    dm_mention_patterns: vec![],
-                    group_mention_patterns: vec![],
                     proxy_url: None,
                 });
             }

@@ -463,7 +463,6 @@ struct ResponseToolUseWrapper {
 
 pub struct BedrockProvider {
     auth: Option<BedrockAuth>,
-    max_tokens: u32,
 }
 
 impl BedrockProvider {
@@ -472,12 +471,10 @@ impl BedrockProvider {
         if let Some(token) = env_optional("BEDROCK_API_KEY") {
             return Self {
                 auth: Some(BedrockAuth::BearerToken(token)),
-                max_tokens: DEFAULT_MAX_TOKENS,
             };
         }
         Self {
             auth: AwsCredentials::from_env().ok().map(BedrockAuth::SigV4),
-            max_tokens: DEFAULT_MAX_TOKENS,
         }
     }
 
@@ -486,28 +483,17 @@ impl BedrockProvider {
         if let Some(token) = env_optional("BEDROCK_API_KEY") {
             return Self {
                 auth: Some(BedrockAuth::BearerToken(token)),
-                max_tokens: DEFAULT_MAX_TOKENS,
             };
         }
         let auth = AwsCredentials::resolve().await.ok().map(BedrockAuth::SigV4);
-        Self {
-            auth,
-            max_tokens: DEFAULT_MAX_TOKENS,
-        }
+        Self { auth }
     }
 
     /// Create a provider using a Bearer token for authentication.
     pub fn with_bearer_token(token: &str) -> Self {
         Self {
             auth: Some(BedrockAuth::BearerToken(token.to_string())),
-            max_tokens: DEFAULT_MAX_TOKENS,
         }
-    }
-
-    /// Override the maximum output tokens for API requests.
-    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
-        self.max_tokens = max_tokens;
-        self
     }
 
     fn http_client(&self) -> Client {
@@ -1104,7 +1090,7 @@ impl Provider for BedrockProvider {
                 content: Self::parse_user_content_blocks(message),
             }],
             inference_config: Some(InferenceConfig {
-                max_tokens: self.max_tokens,
+                max_tokens: DEFAULT_MAX_TOKENS,
                 temperature,
             }),
             tool_config: None,
@@ -1157,7 +1143,7 @@ impl Provider for BedrockProvider {
             system,
             messages: converse_messages,
             inference_config: Some(InferenceConfig {
-                max_tokens: self.max_tokens,
+                max_tokens: DEFAULT_MAX_TOKENS,
                 temperature,
             }),
             tool_config,
@@ -1369,10 +1355,7 @@ mod tests {
 
     #[tokio::test]
     async fn chat_fails_without_credentials() {
-        let provider = BedrockProvider {
-            auth: None,
-            max_tokens: DEFAULT_MAX_TOKENS,
-        };
+        let provider = BedrockProvider { auth: None };
         let result = provider
             .chat_with_system(None, "hello", "anthropic.claude-sonnet-4-6", 0.7)
             .await;
@@ -1706,20 +1689,14 @@ mod tests {
 
     #[tokio::test]
     async fn warmup_without_credentials_is_noop() {
-        let provider = BedrockProvider {
-            auth: None,
-            max_tokens: DEFAULT_MAX_TOKENS,
-        };
+        let provider = BedrockProvider { auth: None };
         let result = provider.warmup().await;
         assert!(result.is_ok());
     }
 
     #[test]
     fn capabilities_reports_native_tool_calling() {
-        let provider = BedrockProvider {
-            auth: None,
-            max_tokens: DEFAULT_MAX_TOKENS,
-        };
+        let provider = BedrockProvider { auth: None };
         let caps = provider.capabilities();
         assert!(caps.native_tool_calling);
     }

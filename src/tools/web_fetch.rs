@@ -24,7 +24,6 @@ pub struct WebFetchTool {
     security: Arc<SecurityPolicy>,
     allowed_domains: Vec<String>,
     blocked_domains: Vec<String>,
-    allowed_private_hosts: Vec<String>,
     max_response_size: usize,
     timeout_secs: u64,
     firecrawl: FirecrawlConfig,
@@ -38,13 +37,11 @@ impl WebFetchTool {
         max_response_size: usize,
         timeout_secs: u64,
         firecrawl: FirecrawlConfig,
-        allowed_private_hosts: Vec<String>,
     ) -> Self {
         Self {
             security,
             allowed_domains: normalize_allowed_domains(allowed_domains),
             blocked_domains: normalize_allowed_domains(blocked_domains),
-            allowed_private_hosts: normalize_allowed_domains(allowed_private_hosts),
             max_response_size,
             timeout_secs,
             firecrawl,
@@ -56,7 +53,6 @@ impl WebFetchTool {
             raw_url,
             &self.allowed_domains,
             &self.blocked_domains,
-            &self.allowed_private_hosts,
             "web_fetch",
         )
     }
@@ -330,7 +326,6 @@ impl Tool for WebFetchTool {
 
         let allowed_domains = self.allowed_domains.clone();
         let blocked_domains = self.blocked_domains.clone();
-        let allowed_private_hosts = self.allowed_private_hosts.clone();
         let redirect_policy = reqwest::redirect::Policy::custom(move |attempt| {
             if attempt.previous().len() >= 10 {
                 return attempt.error(std::io::Error::other("Too many redirects (max 10)"));
@@ -340,7 +335,6 @@ impl Tool for WebFetchTool {
                 attempt.url().as_str(),
                 &allowed_domains,
                 &blocked_domains,
-                &allowed_private_hosts,
                 "web_fetch",
             ) {
                 return attempt.error(std::io::Error::new(
@@ -404,7 +398,6 @@ fn validate_target_url(
     raw_url: &str,
     allowed_domains: &[String],
     blocked_domains: &[String],
-    allowed_private_hosts: &[String],
     tool_name: &str,
 ) -> anyhow::Result<String> {
     let url = raw_url.trim();
@@ -430,34 +423,19 @@ fn validate_target_url(
 
     let host = extract_host(url)?;
 
-    // blocked_domains always takes precedence
+    if is_private_or_local_host(&host) {
+        anyhow::bail!("Blocked local/private host: {host}");
+    }
+
     if host_matches_allowlist(&host, blocked_domains) {
         anyhow::bail!("Host '{host}' is in {tool_name}.blocked_domains");
     }
 
-    let private_host_allowed =
-        is_private_or_local_host(&host) && host_matches_allowlist(&host, allowed_private_hosts);
-
-    if is_private_or_local_host(&host) && !private_host_allowed {
-        anyhow::bail!(
-            "Blocked local/private host: {host}. \
-             To allow this host, add it to {tool_name}.allowed_private_hosts in config.toml"
-        );
-    }
-
-    if private_host_allowed {
-        tracing::warn!(
-            "{tool_name}: allowing private/local host '{host}' via allowed_private_hosts"
-        );
-    }
-
-    if !private_host_allowed && !host_matches_allowlist(&host, allowed_domains) {
+    if !host_matches_allowlist(&host, allowed_domains) {
         anyhow::bail!("Host '{host}' is not in {tool_name}.allowed_domains");
     }
 
-    if !private_host_allowed {
-        validate_resolved_host_is_public(&host)?;
-    }
+    validate_resolved_host_is_public(&host)?;
 
     Ok(url.to_string())
 }
@@ -681,30 +659,6 @@ mod tests {
             500_000,
             30,
             FirecrawlConfig::default(),
-            vec![],
-        )
-    }
-
-    fn test_tool_with_private_hosts(
-        allowed_domains: Vec<&str>,
-        blocked_domains: Vec<&str>,
-        allowed_private_hosts: Vec<&str>,
-    ) -> WebFetchTool {
-        let security = Arc::new(SecurityPolicy {
-            autonomy: AutonomyLevel::Supervised,
-            ..SecurityPolicy::default()
-        });
-        WebFetchTool::new(
-            security,
-            allowed_domains.into_iter().map(String::from).collect(),
-            blocked_domains.into_iter().map(String::from).collect(),
-            500_000,
-            30,
-            FirecrawlConfig::default(),
-            allowed_private_hosts
-                .into_iter()
-                .map(String::from)
-                .collect(),
         )
     }
 
@@ -713,15 +667,7 @@ mod tests {
             autonomy: AutonomyLevel::Supervised,
             ..SecurityPolicy::default()
         });
-        WebFetchTool::new(
-            security,
-            vec!["*".into()],
-            vec![],
-            500_000,
-            30,
-            firecrawl,
-            vec![],
-        )
+        WebFetchTool::new(security, vec!["*".into()], vec![], 500_000, 30, firecrawl)
     }
 
     // ── Name and schema ──────────────────────────────────────────
@@ -819,7 +765,6 @@ mod tests {
             500_000,
             30,
             FirecrawlConfig::default(),
-            vec![],
         );
         let err = tool
             .validate_url("https://example.com")
@@ -881,7 +826,6 @@ mod tests {
             "https://docs.example.com/page",
             &allowed,
             &blocked,
-            &[],
             "web_fetch"
         )
         .is_ok());
@@ -891,15 +835,9 @@ mod tests {
     fn redirect_target_validation_blocks_private_host() {
         let allowed = vec!["example.com".to_string()];
         let blocked = vec![];
-        let err = validate_target_url(
-            "https://127.0.0.1/admin",
-            &allowed,
-            &blocked,
-            &[],
-            "web_fetch",
-        )
-        .unwrap_err()
-        .to_string();
+        let err = validate_target_url("https://127.0.0.1/admin", &allowed, &blocked, "web_fetch")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("local/private"));
     }
 
@@ -907,15 +845,9 @@ mod tests {
     fn redirect_target_validation_blocks_blocklisted_host() {
         let allowed = vec!["*".to_string()];
         let blocked = vec!["evil.com".to_string()];
-        let err = validate_target_url(
-            "https://evil.com/phish",
-            &allowed,
-            &blocked,
-            &[],
-            "web_fetch",
-        )
-        .unwrap_err()
-        .to_string();
+        let err = validate_target_url("https://evil.com/phish", &allowed, &blocked, "web_fetch")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("blocked_domains"));
     }
 
@@ -934,7 +866,6 @@ mod tests {
             500_000,
             30,
             FirecrawlConfig::default(),
-            vec![],
         );
         let result = tool
             .execute(json!({"url": "https://example.com"}))
@@ -957,7 +888,6 @@ mod tests {
             500_000,
             30,
             FirecrawlConfig::default(),
-            vec![],
         );
         let result = tool
             .execute(json!({"url": "https://example.com"}))
@@ -985,7 +915,6 @@ mod tests {
             10,
             30,
             FirecrawlConfig::default(),
-            vec![],
         );
         let text = "hello world this is long";
         let truncated = tool.truncate_response(text);
@@ -1346,7 +1275,6 @@ mod tests {
                 api_url: format!("http://{addr}"),
                 ..FirecrawlConfig::default()
             },
-            vec![],
         );
 
         // Bypass SSRF-guarded execute() — call standard_fetch + fallback
@@ -1434,7 +1362,6 @@ mod tests {
                 api_url: format!("http://{firecrawl_addr}"),
                 ..FirecrawlConfig::default()
             },
-            vec![],
         );
 
         // Bypass SSRF-guarded execute() — call standard_fetch + fallback
@@ -1462,41 +1389,5 @@ mod tests {
 
         // Clean up env var
         std::env::remove_var("FIRECRAWL_E2E_TEST_KEY");
-    }
-
-    // ── Allowed private hosts ─────────────────────────────────────
-
-    #[test]
-    fn allowed_private_host_bypasses_ssrf_block() {
-        let tool = test_tool_with_private_hosts(vec!["*"], vec![], vec!["192.168.1.5"]);
-        assert!(tool.validate_url("https://192.168.1.5/api").is_ok());
-    }
-
-    #[test]
-    fn unallowed_private_host_still_blocked() {
-        let tool = test_tool_with_private_hosts(vec!["*"], vec![], vec!["192.168.1.5"]);
-        let err = tool
-            .validate_url("https://10.0.0.1/admin")
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("local/private"));
-        assert!(err.contains("allowed_private_hosts"));
-    }
-
-    #[test]
-    fn blocklist_overrides_allowed_private_host() {
-        let tool =
-            test_tool_with_private_hosts(vec!["*"], vec!["192.168.1.5"], vec!["192.168.1.5"]);
-        let err = tool
-            .validate_url("https://192.168.1.5/secret")
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("blocked_domains"));
-    }
-
-    #[test]
-    fn allowed_private_host_with_port() {
-        let tool = test_tool_with_private_hosts(vec!["*"], vec![], vec!["192.168.1.5"]);
-        assert!(tool.validate_url("https://192.168.1.5:8080/api").is_ok());
     }
 }
