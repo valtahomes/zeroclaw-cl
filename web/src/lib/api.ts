@@ -13,14 +13,11 @@ import type {
   ChannelDetail,
 } from '../types/api';
 import { clearToken, getToken, setToken } from './auth';
-// import { apiOrigin, basePath } from './basePath';
+import { basePath } from './basePath';
 
 // ---------------------------------------------------------------------------
 // Base fetch wrapper
 // ---------------------------------------------------------------------------
-
-// 从全局变量读取 basename，Nginx 注入时会设置这个值
-const BASE_PATH = (window as any).__CLAW_BASE__ || '';
 
 
 export class UnauthorizedError extends Error {
@@ -51,8 +48,7 @@ export async function apiFetch<T = unknown>(
 
   // const response = await fetch(`${apiOrigin}${basePath}${path}`, { ...options, headers });
 
-  // 添加 basename 前缀到 API 路径
-  const fullPath = BASE_PATH + path;
+  const fullPath = basePath + path;
   const response = await fetch(fullPath, { ...options, headers });
 
 
@@ -91,7 +87,7 @@ function unwrapField<T>(value: T | Record<string, T>, key: string): T {
 // ---------------------------------------------------------------------------
 
 export async function pair(code: string): Promise<{ token: string }> {
-  const response = await fetch(BASE_PATH + '/pair', {
+  const response = await fetch(basePath + '/pair', {
     method: 'POST',
     headers: { 'X-Pairing-Code': code },
   });
@@ -119,7 +115,7 @@ export async function getAdminPairCode(): Promise<{ pairing_code: string | null;
 // ---------------------------------------------------------------------------
 
 export async function getPublicHealth(): Promise<{ require_pairing: boolean; paired: boolean }> {
-  const response = await fetch(BASE_PATH + '/health');
+  const response = await fetch(basePath + '/health');
   if (!response.ok) {
     throw new Error(`Health check failed (${response.status})`);
   }
