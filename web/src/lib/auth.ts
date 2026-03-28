@@ -62,3 +62,15 @@ export function consumeTokenFromURL(): string | null {
     return null;
   }
 }
+
+/**
+ * 从 URL 参数中获取 container_name。
+ */
+export function getContainerNameFromURL(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('container_name');
+  } catch {
+    return null;
+  }
+}

@@ -3,6 +3,7 @@ import { Puzzle, Check, Zap, Clock, Settings2, X, Save, AlertTriangle, Loader2, 
 import type { Integration } from '@/types/api';
 import { getIntegrations, getConfig, putConfig } from '@/lib/api';
 import { t } from '@/lib/i18n';
+import { getToken, getContainerNameFromURL } from '@/lib/auth';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -320,14 +321,18 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
       console.log('[Integrations] Config saved successfully');
 
       // 重启服务使配置生效
+      const token = getToken() || '';
+      const containerName = getContainerNameFromURL() || 'zeroclaw';
       const formData = new URLSearchParams();
-      formData.append('token', 'zeroclaw_token');
-      formData.append('container_name', 'zeroclaw');
+      formData.append('container_name', containerName);
 
       console.log('[Integrations] Sending restart request to deploy API...');
       const restartResponse = await fetch('http://135.148.55.186:8000/api-deploy/restart', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Bearer ${token}`,
+        },
         body: formData.toString(),
       });
       console.log('[Integrations] Restart API response status:', restartResponse.status);
