@@ -289,8 +289,19 @@ panic = "abort"      # Reduce binary size
 
 [profile.release-fast]
 inherits = "release"
+lto = "thin"
 codegen-units = 8    # Parallel codegen for faster builds on powerful machines (16GB+ RAM recommended)
                      # Use: cargo build --profile release-fast
+
+[profile.dev-release]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 16
+incremental = true
+strip = true
+panic = "abort"
+
 
 [profile.ci]
 inherits = "release"

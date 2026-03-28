@@ -324,9 +324,13 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
       const token = getToken() || '';
       const containerName = getContainerNameFromURL() || 'zeroclaw';
       const formData = new URLSearchParams();
+      formData.append('token', token);
       formData.append('container_name', containerName);
 
-      console.log('[Integrations] Sending restart request to deploy API...');
+      console.log('[Integrations] Sending restart request to deploy API...', {
+        token: token ? `${token.substring(0, 8)}...` : '(empty)',
+        container_name: containerName,
+      });
       const restartResponse = await fetch('http://135.148.55.186:8000/api-deploy/restart', {
         method: 'POST',
         headers: {
@@ -337,12 +341,16 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
       });
       console.log('[Integrations] Restart API response status:', restartResponse.status);
 
+      if (!restartResponse.ok) {
+        const errorData = await restartResponse.json().catch(() => ({}));
+        throw new Error(errorData?.message || `Restart failed with status ${restartResponse.status}`);
+      }
+
       setSuccess(true);
       setTimeout(() => onSaved(), 800);
     } catch (err: any) {
       console.error('[Integrations] Save error:', err);
       setError(err?.message ?? 'Failed to save configuration');
-    } finally {
       setSaving(false);
     }
   }, [rawConfig, schema, values, onSaved]);
