@@ -17,9 +17,22 @@ export default defineConfig({
     outDir: "dist",
   },
   server: {
+    port: 5173,
     proxy: {
-      '/api-deploy': {
-        target: 'http://135.148.55.186:8000',
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/pair': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/admin': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/health': {
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
     },

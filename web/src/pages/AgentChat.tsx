@@ -7,6 +7,7 @@ import { generateUUID } from '@/lib/uuid';
 import { useDraft } from '@/hooks/useDraft';
 import { useSessionManager } from '@/hooks/useSessionManager';
 import SessionSidebar from '@/components/SessionSidebar';
+import MarkdownContent from '@/components/MarkdownContent';
 
 const DRAFT_KEY = 'agent-chat';
 
@@ -225,9 +226,8 @@ export default function AgentChat() {
     <div className="flex h-[calc(100vh-3.5rem)]">
       {/* Session sidebar (collapsible) */}
       <div
-        className={`transition-all duration-300 overflow-hidden flex-shrink-0 ${
-          sidebarOpen ? 'w-[260px]' : 'w-0'
-        }`}
+        className={`transition-all duration-300 overflow-hidden flex-shrink-0 ${sidebarOpen ? 'w-[260px]' : 'w-0'
+          }`}
       >
         <SessionSidebar
           sessions={sessions}
@@ -302,11 +302,10 @@ export default function AgentChat() {
           {currentMessages.map((msg, idx) => (
             <div
               key={msg.id}
-              className={`group flex items-start gap-3 ${
-                msg.role === 'user'
+              className={`group flex items-start gap-3 ${msg.role === 'user'
                   ? 'flex-row-reverse animate-slide-in-right'
                   : 'animate-slide-in-left'
-              }`}
+                }`}
               style={{ animationDelay: `${Math.min(idx * 30, 200)}ms` }}
             >
               <div
@@ -337,7 +336,12 @@ export default function AgentChat() {
                     color: 'var(--pc-text-primary)',
                   }}
                 >
-                  <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                  {msg.role === 'user' ? (
+                    // <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                    <MarkdownContent content={msg.content} />
+                  ) : (
+                    <MarkdownContent content={msg.content} />
+                  )}
                   <p
                     className="text-[10px] mt-1.5"
                     style={{ color: msg.role === 'user' ? 'var(--pc-accent-light)' : 'var(--pc-text-faint)' }}
