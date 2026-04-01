@@ -64,12 +64,28 @@ export function consumeTokenFromURL(): string | null {
 }
 
 /**
- * 从 URL 参数中获取 container_name。
+ * 从 URL 中获取 container_name。
+ * 支持两种格式：
+ * 1. Query 参数：?container_name=yexin
+ * 2. 路径参数：/claw/yexin (从 /claw/{container_name} 格式中提取)
  */
 export function getContainerNameFromURL(): string | null {
   try {
+    // 先尝试从 query 参数获取
     const params = new URLSearchParams(window.location.search);
-    return params.get('container_name');
+    const queryValue = params.get('container_name');
+    if (queryValue && queryValue.length > 0) {
+      return queryValue;
+    }
+
+    // 再尝试从路径获取 (格式：/claw/{container_name})
+    const pathname = window.location.pathname;
+    const clawMatch = pathname.match(/^\/claw\/([^/]+)$/);
+    if (clawMatch && clawMatch[1] && clawMatch[1].length > 0) {
+      return clawMatch[1];
+    }
+
+    return null;
   } catch {
     return null;
   }

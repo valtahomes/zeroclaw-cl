@@ -291,6 +291,15 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [visibleFields, setVisibleFields] = useState<Set<string>>(new Set());
+  const [containerName, setContainerName] = useState<string>('zeroclaw');
+
+  useEffect(() => {
+    // 获取 container_name 并保存，避免保存时 URL 参数已丢失
+    const urlContainerName = getContainerNameFromURL();
+    if (urlContainerName && urlContainerName.length > 0) {
+      setContainerName(urlContainerName);
+    }
+  }, []);
 
   useEffect(() => {
     getConfig()
@@ -322,7 +331,8 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
 
       // 重启服务使配置生效
       const token = getToken() || '';
-      const containerName = getContainerNameFromURL() || 'zeroclaw';
+      // 使用组件初始化时获取的 container_name，避免 URL 参数丢失
+      console.log('[Integrations] Using container_name from state:', containerName);
       const formData = new URLSearchParams();
       formData.append('token', token);
       formData.append('container_name', containerName);
@@ -353,7 +363,7 @@ function ConfigureModal({ integration, schema, onClose, onSaved }: ConfigureModa
       setError(err?.message ?? 'Failed to save configuration');
       setSaving(false);
     }
-  }, [rawConfig, schema, values, onSaved]);
+  }, [rawConfig, schema, values, onSaved, containerName]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
